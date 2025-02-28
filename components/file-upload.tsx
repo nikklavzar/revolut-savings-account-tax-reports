@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { Upload, FileText, Download, AlertCircle, FileCode, Info, CheckCircle2 } from 'lucide-react'
+import { Upload, FileText, Download, AlertCircle, FileCode, Info, CheckCircle2, HelpCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import Papa from 'papaparse'
 import { parseTransactions, type FundTransactions } from '@/lib/revolut-parser'
@@ -75,11 +75,11 @@ export function FileUpload() {
             await new Promise(resolve => setTimeout(resolve, 500))
             setProgress(80)
             
-            // Generate the report using the separate function
-            const reportText = generateReport(transactions)
-            
             // Generate tax XML files
             const taxXMLs = generateAllTaxXMLs(transactions)
+            
+            // Generate the report using the separate function
+            const reportText = generateReport(transactions)
             
             // Create a blob for download
             const blob = new Blob([reportText], { type: 'text/plain' })
@@ -88,13 +88,25 @@ export function FileUpload() {
             // Update progress to 100%
             setProgress(100)
             
-            setResult({
-              success: true,
-              message: "Davčni obrazci so bili uspešno pripravljeni!",
-              downloadUrl: url,
-              fileName: "davcni_obrazci_revolut.txt",
-              taxXMLs
-            })
+            // Check if any XML files were generated
+            const hasXmlFiles = Object.keys(taxXMLs).length > 0;
+            
+            if (hasXmlFiles) {
+              setResult({
+                success: true,
+                message: "Davčni obrazci so bili uspešno pripravljeni!",
+                downloadUrl: url,
+                fileName: "davcni_obrazci_revolut.txt",
+                taxXMLs
+              });
+            } else {
+              setResult({
+                success: false,
+                message: "Ni bilo mogoče generirati XML datotek. V datoteki ni bilo najdenih ustreznih transakcij.",
+                downloadUrl: url,
+                fileName: "davcni_obrazci_revolut.txt"
+              });
+            }
           } catch (error) {
             console.error('Error processing transactions:', error)
             setResult({
@@ -400,6 +412,31 @@ export function FileUpload() {
                       {result.message}
                     </AlertDescription>
                   </Alert>
+                  
+                  {/* Special error message for when no XML files were generated */}
+                  {result.message.includes("Ni bilo mogoče generirati XML datotek") && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+                      <div className="flex space-x-3">
+                        <HelpCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="space-y-2">
+                          <h3 className="font-medium text-amber-800">Ali ste uporabili &quot;Consolidated statement&quot;?</h3>
+                          <p className="text-amber-700">
+                            Preverite, ali ste izvozili podatke z uporabo &quot;Consolidated statement&quot; kot je navedeno v navodilih:
+                          </p>
+                          <ol className="list-decimal pl-5 space-y-1 text-amber-700">
+                            <li>V Revolut aplikaciji kliknite na ikono profila</li>
+                            <li>Izberite <b>Documents & statements &gt; Consolidated statement</b></li>
+                            <li>Izberite format &quot;Excel&quot;, obdobje &quot;Tax Year&quot; in leto 2024</li>
+                            <li>Če uporabljate več Revolut storitev, nastavite filter na &quot;Savings & funds&quot;</li>
+                          </ol>
+                          <p className="text-amber-700 font-medium">
+                            Če ste uporabili drug način izvoza, podatki morda niso v pravilnem formatu.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
                   <Button variant="outline" className="w-full" onClick={resetForm}>
                     Poskusi znova
                   </Button>
