@@ -19,6 +19,43 @@ interface FileUploadProps {
   onRestart: () => void
 }
 
+interface ExcludedCounts {
+  orders: number
+  interest: number
+}
+
+function filterTransactionsByYear(
+  transactions: FundTransactions[],
+  taxYear: number
+) {
+  let excludedOrders = 0
+  let excludedInterest = 0
+
+  const filteredTransactions = transactions
+    .map((fund) => {
+      const orders = fund.orders.filter((order) => order.date.getFullYear() === taxYear)
+      const interestPayments = fund.interest_payments.filter(
+        (payment) => payment.date.getFullYear() === taxYear
+      )
+
+      excludedOrders += fund.orders.length - orders.length
+      excludedInterest += fund.interest_payments.length - interestPayments.length
+
+      return {
+        ...fund,
+        orders,
+        interest_payments: interestPayments,
+      }
+    })
+    .filter((fund) => fund.orders.length > 0 || fund.interest_payments.length > 0)
+
+  return {
+    filteredTransactions,
+    excludedOrders,
+    excludedInterest,
+  }
+}
+
 export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
   const [file, setFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -33,6 +70,7 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
     fileName?: string;
     taxXMLs?: Record<string, string>;
   } | null>(null)
+  const [excludedCounts, setExcludedCounts] = useState<ExcludedCounts>({ orders: 0, interest: 0 })
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -40,6 +78,7 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
       setFile(selectedFile)
       setResult(null)
       setParsedData(null)
+      setExcludedCounts({ orders: 0, interest: 0 })
     }
   }
 
@@ -68,10 +107,14 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
             // Parse the transactions using our custom parser
             const data = results.data as string[][]
             const transactions = await parseTransactions(data)
+            const { filteredTransactions, excludedOrders, excludedInterest } =
+              filterTransactionsByYear(transactions, taxYear)
             
             // Log the parsed transactions to the console
             console.log('Parsed transactions:', transactions)
-            setParsedData(transactions)
+            console.log(`Filtered transactions for tax year ${taxYear}:`, filteredTransactions)
+            setParsedData(filteredTransactions)
+            setExcludedCounts({ orders: excludedOrders, interest: excludedInterest })
             
             // Update progress to 60%
             setProgress(60)
@@ -81,10 +124,10 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
             setProgress(80)
             
             // Generate tax XML files
-            const taxXMLs = generateAllTaxXMLs(transactions, taxYear)
+            const taxXMLs = generateAllTaxXMLs(filteredTransactions, taxYear)
             
             // Generate the report using the separate function
-            const reportText = generateReport(transactions)
+            const reportText = generateReport(filteredTransactions)
             
             // Create a blob for download
             const blob = new Blob([reportText], { type: 'text/plain' })
@@ -105,9 +148,12 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
                 taxXMLs
               });
             } else {
+              const noTransactionsMessage = filteredTransactions.length === 0
+                ? `Ni bilo mogoče generirati XML datotek. V datoteki ni bilo najdenih transakcij za leto ${taxYear}.`
+                : "Ni bilo mogoče generirati XML datotek. V datoteki ni bilo najdenih ustreznih transakcij."
               setResult({
                 success: false,
-                message: "Ni bilo mogoče generirati XML datotek. V datoteki ni bilo najdenih ustreznih transakcij.",
+                message: noTransactionsMessage,
                 downloadUrl: url,
                 fileName: "davcni_obrazci_revolut.txt"
               });
@@ -179,6 +225,7 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
     setParsedData(null)
     setProgress(0)
     setTaxNumber("")
+    setExcludedCounts({ orders: 0, interest: 0 })
   }
 
   const isValidTaxNumber = (num: string) => {
@@ -187,6 +234,10 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
   }
 
   const hasXMLFiles = result?.success && result?.taxXMLs && Object.keys(result.taxXMLs).length > 0;
+  const excludedTotal = excludedCounts.orders + excludedCounts.interest;
+  const excludedDescription = excludedTotal > 0
+    ? `Iz obdelave smo odstranili ${excludedTotal} transakcij (nakupi/prodaje: ${excludedCounts.orders}, obresti: ${excludedCounts.interest}), ker ne spadajo v davčno leto ${taxYear}.`
+    : '';
 
   return (
     <>
@@ -288,22 +339,32 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
 
           {result && (
             <div className="space-y-6">
-              {result.success ? (
-                <>
-                  <Alert className="bg-green-50 border-green-200">
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    <AlertTitle className="text-green-800 text-lg">Uspešno!</AlertTitle>
-                    <AlertDescription className="text-green-700">
-                      {result.message}
-                    </AlertDescription>
-                  </Alert>
-                  
-                  {/* XML files section - made more prominent */}
-                  {result.taxXMLs && Object.keys(result.taxXMLs).length > 0 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
-                      <h3 className="text-lg font-semibold mb-3 text-blue-800">
-                        Datoteke za oddajo na eDavki:
-                      </h3>
+          {result.success ? (
+            <>
+              <Alert className="bg-green-50 border-green-200">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+                <AlertTitle className="text-green-800 text-lg">Uspešno!</AlertTitle>
+                <AlertDescription className="text-green-700">
+                  {result.message}
+                </AlertDescription>
+              </Alert>
+
+              {excludedTotal > 0 && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-sm">Nekaj podatkov je bilo izločenih</AlertTitle>
+                  <AlertDescription className="text-amber-700 text-sm">
+                    {excludedDescription}
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {/* XML files section - made more prominent */}
+              {result.taxXMLs && Object.keys(result.taxXMLs).length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+                  <h3 className="text-lg font-semibold mb-3 text-blue-800">
+                    Datoteke za oddajo na eDavki:
+                  </h3>
                       
                       <div className="grid gap-3">
                         {result.taxXMLs["kdvp"] && (
@@ -414,20 +475,30 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
                     Začni znova
                   </Button>
                 </>
-              ) : (
-                <>
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Napaka</AlertTitle>
-                    <AlertDescription>
-                      {result.message}
-                    </AlertDescription>
-                  </Alert>
-                  
-                  {/* Special error message for when no XML files were generated */}
-                  {result.message.includes("Ni bilo mogoče generirati XML datotek") && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
-                      <div className="flex space-x-3">
+          ) : (
+            <>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Napaka</AlertTitle>
+                <AlertDescription>
+                  {result.message}
+                </AlertDescription>
+              </Alert>
+
+              {excludedTotal > 0 && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-sm">Nekaj podatkov je bilo izločenih</AlertTitle>
+                  <AlertDescription className="text-amber-700 text-sm">
+                    {excludedDescription}
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {/* Special error message for when no XML files were generated */}
+              {result.message.includes("Ni bilo mogoče generirati XML datotek") && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+                  <div className="flex space-x-3">
                         <HelpCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
                         <div className="space-y-2">
                         <h3 className="font-medium text-amber-800">Ali ste uporabili &quot;Consolidated statement&quot;?</h3>
