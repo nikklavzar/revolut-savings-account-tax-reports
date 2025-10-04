@@ -1,4 +1,3 @@
-import { FileUpload } from '@/components/file-upload';
 import { ThemeProvider } from '@/components/theme-provider';
 import { EligibilityCheck } from '@/components/eligibility-check';
 import { InstructionsAccordion } from '@/components/instructions-accordion';
@@ -18,7 +17,7 @@ export default function Home() {
               FURS & Revolut Saving Accounts
             </h1>
             <h2 className="text-xl text-center text-muted-foreground mb-6">
-              Priprava davčnih obrazcev za leto 2024
+              Priprava davčnih obrazcev za leti 2023 in 2024
             </h2>
             
             <EligibilityCheck />

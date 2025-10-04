@@ -14,7 +14,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
-export function FileUpload() {
+interface FileUploadProps {
+  taxYear: number
+  onRestart: () => void
+}
+
+export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
   const [file, setFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -76,7 +81,7 @@ export function FileUpload() {
             setProgress(80)
             
             // Generate tax XML files
-            const taxXMLs = generateAllTaxXMLs(transactions)
+            const taxXMLs = generateAllTaxXMLs(transactions, taxYear)
             
             // Generate the report using the separate function
             const reportText = generateReport(transactions)
@@ -139,8 +144,7 @@ export function FileUpload() {
   const downloadTaxXML = (xmlKey: string, fileName: string) => {
     if (!parsedData || !taxNumber || !result?.taxXMLs?.[xmlKey]) return;
     
-    // Fixed tax year to 2024
-    const year = 2024;
+    const year = taxYear;
     let xmlContent = "";
     
     // Generate the appropriate XML based on the key
@@ -174,6 +178,7 @@ export function FileUpload() {
     setResult(null)
     setParsedData(null)
     setProgress(0)
+    setTaxNumber("")
   }
 
   const isValidTaxNumber = (num: string) => {
@@ -187,6 +192,12 @@ export function FileUpload() {
     <>
       <Card className="p-6">
         <div className="space-y-6">
+          <div className="flex justify-center">
+            <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Davčno leto: {taxYear}
+            </span>
+          </div>
+
           {/* Only show title and subtitle if we don't have successful XML generation */}
           {!hasXMLFiles && (
             <div className="text-center">
@@ -299,13 +310,13 @@ export function FileUpload() {
                           <Button 
                             size="lg"
                             className="w-full flex justify-between items-center bg-white hover:bg-blue-100 text-blue-800 border border-blue-300 hover:border-blue-400 shadow-sm"
-                            onClick={() => downloadTaxXML("kdvp", "Doh_KDVP_Revolut_2024.xml")}
+                            onClick={() => downloadTaxXML("kdvp", `Doh_KDVP_Revolut_${taxYear}.xml`)}
                             disabled={!isValidTaxNumber(taxNumber)}
                           >
                             <span className="flex items-center">
                               <FileCode className="mr-3 h-5 w-5 text-blue-600" />
                               <span className="text-base font-medium">
-                                Doh_KDVP_Revolut_2024.xml
+                                {`Doh_KDVP_Revolut_${taxYear}.xml`}
                               </span>
                             </span>
                             <Download className="h-5 w-5 text-blue-600" />
@@ -316,13 +327,13 @@ export function FileUpload() {
                           <Button 
                             size="lg"
                             className="w-full flex justify-between items-center bg-white hover:bg-blue-100 text-blue-800 border border-blue-300 hover:border-blue-400 shadow-sm"
-                            onClick={() => downloadTaxXML("interest", "Doh_Obr_Revolut_2024.xml")}
+                            onClick={() => downloadTaxXML("interest", `Doh_Obr_Revolut_${taxYear}.xml`)}
                             disabled={!isValidTaxNumber(taxNumber)}
                           >
                             <span className="flex items-center">
                               <FileCode className="mr-3 h-5 w-5 text-blue-600" />
                               <span className="text-base font-medium">
-                                Doh_Obr_Revolut_2024.xml
+                                {`Doh_Obr_Revolut_${taxYear}.xml`}
                               </span>
                             </span>
                             <Download className="h-5 w-5 text-blue-600" />
@@ -333,7 +344,7 @@ export function FileUpload() {
                       <div className="mt-3 flex items-start space-x-2 text-sm">
                         <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
                         <p className="text-blue-700">
-                          XML datoteke so generirane za davčno leto 2024 z vašo davčno številko ({taxNumber}). 
+                          XML datoteke so generirane za davčno leto {taxYear} z vašo davčno številko ({taxNumber}). 
                           Te datoteke lahko neposredno uvozite v sistem eDavki. Po uvozu nujno preverite pravilnost podatkov
                         </p>
                       </div>
@@ -419,14 +430,14 @@ export function FileUpload() {
                       <div className="flex space-x-3">
                         <HelpCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
                         <div className="space-y-2">
-                          <h3 className="font-medium text-amber-800">Ali ste uporabili &quot;Consolidated statement&quot;?</h3>
+                        <h3 className="font-medium text-amber-800">Ali ste uporabili &quot;Consolidated statement&quot;?</h3>
                           <p className="text-amber-700">
                             Preverite, ali ste izvozili podatke z uporabo &quot;Consolidated statement&quot; kot je navedeno v navodilih:
                           </p>
                           <ol className="list-decimal pl-5 space-y-1 text-amber-700">
                             <li>V Revolut aplikaciji kliknite na ikono profila</li>
                             <li>Izberite <b>Documents & statements &gt; Consolidated statement</b></li>
-                            <li>Izberite format &quot;Excel&quot;, obdobje &quot;Tax Year&quot; in leto 2024</li>
+                            <li>Izberite format &quot;Excel&quot;, obdobje &quot;Tax Year&quot; in ustrezno leto ({taxYear})</li>
                             <li>Če uporabljate več Revolut storitev, nastavite filter na &quot;Savings & funds&quot;</li>
                           </ol>
                           <p className="text-amber-700 font-medium">
@@ -461,6 +472,15 @@ export function FileUpload() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <div className="mt-4 flex justify-center">
+        <Button variant="ghost" onClick={() => {
+          resetForm()
+          onRestart()
+        }}>
+          Zamenjaj davčno leto
+        </Button>
+      </div>
     </>
   )
 }

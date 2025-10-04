@@ -24,7 +24,7 @@ export function InstructionsAccordion() {
             <ol className="list-decimal pl-5 space-y-1">
               <li>V levem zgornjem kotu kliknite na ikono vašega profila, da se &quot;Account&quot; meni</li>
               <li>Klknite na <b>Documents & statements &gt; Consolidated statement</b>  </li>
-              <li>Izberite moznosto &quot;Excel&quot;, &quot;Period&quot; = &quot;Tax Year&quot; in leto 2024 </li>
+              <li>Izberite možnost &quot;Excel&quot;, &quot;Period&quot; = &quot;Tax Year&quot; in ustrezno leto (2023 ali 2024)</li>
               <li><b>POMEMBNO:</b> Če ste poleg savings accounta uporabljali še druge Revolut storitve (Commodities, Crypto ali Brokerage Account), na vrhu popravit filter iz &quot;All products&quot; na &quot;Savings & funds&quot;</li>
               <li>Kliknite na <b>Generate</b></li>
             </ol>

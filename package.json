@@ -7,7 +7,8 @@
     "build": "next build",
     "export": "next export",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "generate:rates": "node scripts/generate-conversion-rates.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

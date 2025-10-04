@@ -67,7 +67,7 @@ npm start
 
 1. **Export Data from Revolut**
    - Go to your Revolut profile > Documents & statements > Consolidated statement
-   - Select "Excel" format, "Tax Year" for period, and year 2024
+   - Select "Excel" format, "Tax Year" for period, and the appropriate year (2023 or 2024)
    - If you use other Revolut services, filter to "Savings & funds" only
    - Click "Generate" to download the CSV file
 

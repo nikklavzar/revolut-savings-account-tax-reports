@@ -250,17 +250,18 @@ export function generateTaxOfficeXml(
  * @param transactions Array of fund transactions
  * @returns Object mapping fund currencies to their XML content
  */
-export function generateAllTaxXMLs(transactions: FundTransactions[]): Record<string, string> {
+export function generateAllTaxXMLs(
+  transactions: FundTransactions[],
+  taxYear: number
+): Record<string, string> {
   const xmlFiles: Record<string, string> = {};
   
   // Only generate XML if there are funds with orders to report
   const fundsWithOrders = transactions.filter(fund => fund.orders.length > 0);
   const fundsWithInterest = transactions.filter(fund => fund.interest_payments.length > 0);
   
-  // Fixed tax year to 2024
-  const taxYear = 2024;
   // Use a placeholder tax number that user will need to replace
-  const taxNumber = "12345678";
+  const taxNumber = "00000000";
   
   if (fundsWithOrders.length > 0) {
     // Generate a single XML file containing all funds with orders
