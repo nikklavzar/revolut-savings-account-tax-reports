@@ -66,11 +66,18 @@ function getConversionRate(
   if (row && row.rates[currency] && !isNaN(row.rates[currency])) {
     return row.rates[currency];
   }
-  // Fallback: choose the most recent available rate for this currency.
+  // Fallback: choose the most recent available rate on or before the requested date.
   const available = conversionRates
     .filter((r) => r.rates[currency] && !isNaN(r.rates[currency]))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
-  return available.length ? available[0].rates[currency] : 1;
+
+  const fallback = available.find((r) => r.date <= formatted);
+  if (fallback) {
+    return fallback.rates[currency];
+  }
+
+  // If the requested date predates our dataset, return the oldest known rate.
+  return available.length ? available[available.length - 1].rates[currency] : 1;
 }
 
 /**
