@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import Papa from 'papaparse'
 import { parseTransactions, type FundTransactions } from '@/lib/revolut-parser'
 import { generateReport, formatNumber, calculateFundSummary } from '@/lib/report-generator'
-import { generateAllTaxXMLs, generateFullDohKDVPXML, generateTaxOfficeXml } from '@/lib/tax-generator'
+import { generateAllTaxXMLs, generateFullDohKDVPXML, generateTaxOfficeXml, type SubmissionType } from '@/lib/tax-generator'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -56,6 +56,17 @@ function filterTransactionsByYear(
   }
 }
 
+function calculateDefaultLateDays(taxYear: number): number {
+  const dueDate = new Date(taxYear + 1, 1, 28)
+  const today = new Date()
+  const diffMs = today.getTime() - dueDate.getTime()
+  if (diffMs <= 0) {
+    return 0
+  }
+  const msPerDay = 1000 * 60 * 60 * 24
+  return Math.floor(diffMs / msPerDay)
+}
+
 export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
   const [file, setFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -71,6 +82,12 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
     taxXMLs?: Record<string, string>;
   } | null>(null)
   const [excludedCounts, setExcludedCounts] = useState<ExcludedCounts>({ orders: 0, interest: 0 })
+  const [submissionType, setSubmissionType] = useState<SubmissionType>('regular')
+  const [selfReportInterestEstimate, setSelfReportInterestEstimate] = useState<number | null>(null)
+  const [lateDays, setLateDays] = useState<number | null>(null)
+  const [lateDaysError, setLateDaysError] = useState<string | null>(null)
+
+  const defaultLateDays = useMemo(() => calculateDefaultLateDays(taxYear), [taxYear])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -79,6 +96,9 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
       setResult(null)
       setParsedData(null)
       setExcludedCounts({ orders: 0, interest: 0 })
+      setSelfReportInterestEstimate(null)
+      setLateDays(null)
+      setLateDaysError(null)
     }
   }
 
@@ -94,6 +114,8 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
     setResult(null)
     setParsedData(null)
     setShowDisclaimerModal(false)
+    setSelfReportInterestEstimate(null)
+    setLateDaysError(null)
 
     try {
       // Parse the CSV file using Papa Parse
@@ -124,11 +146,11 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
             setProgress(80)
             
             // Generate tax XML files
-            const taxXMLs = generateAllTaxXMLs(filteredTransactions, taxYear)
-            
+            const taxXMLs = generateAllTaxXMLs(filteredTransactions, taxYear, submissionType)
+
             // Generate the report using the separate function
             const reportText = generateReport(filteredTransactions)
-            
+
             // Create a blob for download
             const blob = new Blob([reportText], { type: 'text/plain' })
             const url = URL.createObjectURL(blob)
@@ -138,7 +160,11 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
             
             // Check if any XML files were generated
             const hasXmlFiles = Object.keys(taxXMLs).length > 0;
-            
+
+            if (filteredTransactions.length === 0 || submissionType !== 'self-report') {
+              setSelfReportInterestEstimate(null)
+            }
+
             if (hasXmlFiles) {
               setResult({
                 success: true,
@@ -175,6 +201,8 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
             message: "Prišlo je do napake pri obdelavi datoteke. Prosimo, preverite format Excel (CSV) datoteke."
           })
           setIsProcessing(false)
+          setSelfReportInterestEstimate(null)
+          setLateDaysError(null)
         }
       })
     } catch (error) {
@@ -184,6 +212,8 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
         message: "Prišlo je do napake pri obdelavi datoteke. Prosimo, preverite format Excel (CSV) datoteke."
       })
       setIsProcessing(false)
+      setSelfReportInterestEstimate(null)
+      setLateDaysError(null)
     }
   }
 
@@ -197,12 +227,12 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
     if (xmlKey === "kdvp") {
       const fundsWithOrders = parsedData.filter(fund => fund.orders.length > 0);
       if (fundsWithOrders.length > 0) {
-        xmlContent = generateFullDohKDVPXML(fundsWithOrders, year, taxNumber);
+        xmlContent = generateFullDohKDVPXML(fundsWithOrders, year, taxNumber, submissionType);
       }
     } else if (xmlKey === "interest") {
       const fundsWithInterest = parsedData.filter(fund => fund.interest_payments.length > 0);
       if (fundsWithInterest.length > 0) {
-        xmlContent = generateTaxOfficeXml(fundsWithInterest, year, taxNumber);
+        xmlContent = generateTaxOfficeXml(fundsWithInterest, year, taxNumber, submissionType);
       }
     }
     
@@ -226,6 +256,9 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
     setProgress(0)
     setTaxNumber("")
     setExcludedCounts({ orders: 0, interest: 0 })
+    setSelfReportInterestEstimate(null)
+    setLateDays(null)
+    setLateDaysError(null)
   }
 
   const isValidTaxNumber = (num: string) => {
@@ -238,6 +271,41 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
   const excludedDescription = excludedTotal > 0
     ? `Iz obdelave smo odstranili ${excludedTotal} transakcij (nakupi/prodaje: ${excludedCounts.orders}, obresti: ${excludedCounts.interest}), ker ne spadajo v davčno leto ${taxYear}.`
     : '';
+
+  useEffect(() => {
+    if (submissionType === 'self-report' && (lateDays === null || lateDays <= 0) && defaultLateDays > 0) {
+      setLateDays(defaultLateDays)
+      setLateDaysError(null)
+    }
+  }, [submissionType, defaultLateDays, lateDays])
+
+  useEffect(() => {
+    if (
+      submissionType !== 'self-report' ||
+      !parsedData ||
+      parsedData.length === 0 ||
+      lateDaysError
+    ) {
+      setSelfReportInterestEstimate(null)
+      return
+    }
+
+    const totalInterestEur = parsedData.reduce((sum, fund) => {
+      const summary = calculateFundSummary(fund)
+      return sum + summary.totalInterestAmountEur
+    }, 0)
+
+    const effectiveLateDays = lateDays && lateDays > 0 ? lateDays : defaultLateDays
+    if (!effectiveLateDays || effectiveLateDays <= 0) {
+      setSelfReportInterestEstimate(null)
+      return
+    }
+
+    const interestFactor = effectiveLateDays / 365
+    const estimate = totalInterestEur * 0.25 * 0.03 * interestFactor
+
+    setSelfReportInterestEstimate(estimate)
+  }, [submissionType, parsedData, lateDays, lateDaysError, defaultLateDays])
 
   return (
     <>
@@ -307,7 +375,77 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
                     <p className="text-xs text-red-500">Davčna številka mora vsebovati 8 številk</p>
                   )}
                 </div>
-                
+
+                <div className="space-y-2">
+                  <Label htmlFor="submission-type">Način oddaje</Label>
+                  <select
+                    id="submission-type"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={submissionType}
+                    onChange={(event) => {
+                      const nextType = event.target.value as SubmissionType
+                      setSubmissionType(nextType)
+                      if (nextType !== 'self-report') {
+                        setSelfReportInterestEstimate(null)
+                        setLateDays(null)
+                        setLateDaysError(null)
+                      } else {
+                        setLateDays((current) => {
+                          if (current === null || current <= 0) {
+                            return defaultLateDays > 0 ? defaultLateDays : null
+                          }
+                          return current
+                        })
+                      }
+                    }}
+                  >
+                    <option value="regular">Redna oddaja</option>
+                    <option value="self-report">Samoprijava (po izteku roka)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Samoprijava pripravi XML datoteke z ustreznim statusom za naknadno oddajo.
+                  </p>
+                </div>
+
+                {submissionType === 'self-report' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="late-days">Število dni zamude</Label>
+                    <Input
+                      id="late-days"
+                      type="number"
+                      min={1}
+                      placeholder="Vnesite število dni od poteka roka do oddaje"
+                      value={lateDays ?? ''}
+                      onChange={(event) => {
+                        const raw = event.target.value
+                        if (raw.trim() === '') {
+                          setLateDays(null)
+                          setLateDaysError(null)
+                          return
+                        }
+
+                        const parsed = Number.parseInt(raw, 10)
+                        if (Number.isNaN(parsed) || parsed <= 0) {
+                          setLateDaysError('Vnesite pozitivno število dni.')
+                          setLateDays(null)
+                        } else if (parsed > 10000) {
+                          setLateDaysError('Število dni je izjemno veliko – preverite vnos.')
+                          setLateDays(parsed)
+                        } else {
+                          setLateDaysError(null)
+                          setLateDays(parsed)
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Izračun 3% letnih obresti bo preračunan glede na vneseno število dni. Če polje pustite prazno, uporabimo razliko med rokom (28. februar {taxYear + 1}) in današnjim datumom ({defaultLateDays > 0 ? `${defaultLateDays} dni zamude` : 'trenutno brez zamude'}).
+                    </p>
+                    {lateDaysError && (
+                      <p className="text-xs text-red-500">{lateDaysError}</p>
+                    )}
+                  </div>
+                )}
+
                 <Alert className="bg-blue-50 border-blue-200">
                   <Info className="h-4 w-4 text-blue-600" />
                   <AlertTitle className="text-blue-800">Davčna številka</AlertTitle>
@@ -325,6 +463,14 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
                 Obdelaj datoteko
               </Button>
             </div>
+          )}
+
+          {submissionType === 'self-report' && lateDaysError && !isProcessing && !result && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Napaka</AlertTitle>
+              <AlertDescription>{lateDaysError}</AlertDescription>
+            </Alert>
           )}
 
           {isProcessing && (
@@ -358,7 +504,17 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
                   </AlertDescription>
                 </Alert>
               )}
-              
+
+              {submissionType === 'self-report' && selfReportInterestEstimate !== null && selfReportInterestEstimate > 0 && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-sm">Ocena zamudnih obresti</AlertTitle>
+                  <AlertDescription className="text-amber-700 text-sm">
+                    Predvideni dodatni strošek samoprijave (3% letno na 25% davka): <strong>{formatNumber(selfReportInterestEstimate)} EUR</strong>. Dejanski znesek je odvisen od datuma oddaje in odločbe FURS.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* XML files section - made more prominent */}
               {result.taxXMLs && Object.keys(result.taxXMLs).length > 0 && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
@@ -484,6 +640,16 @@ export function FileUpload({ taxYear, onRestart }: FileUploadProps) {
                   {result.message}
                 </AlertDescription>
               </Alert>
+
+              {submissionType === 'self-report' && selfReportInterestEstimate !== null && selfReportInterestEstimate > 0 && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-sm">Ocena zamudnih obresti</AlertTitle>
+                  <AlertDescription className="text-amber-700 text-sm">
+                    Predvideni dodatni strošek samoprijave (3% letno na 25% davka): <strong>{formatNumber(selfReportInterestEstimate)} EUR</strong>. Dejanski znesek je odvisen od datuma oddaje in odločbe FURS.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {excludedTotal > 0 && (
                 <Alert className="bg-amber-50 border-amber-200">

@@ -1,5 +1,12 @@
 import { FundTransactions } from './revolut-parser';
 
+export type SubmissionType = 'regular' | 'self-report';
+
+function resolveWorkflowId(submissionType: SubmissionType): string {
+  // 'O' = original (regular submission), 'I' = self-report after the deadline (samoprijava)
+  return submissionType === 'self-report' ? 'I' : 'O';
+}
+
 /**
  * Formats a number for XML output with 2 decimal places
  */
@@ -114,12 +121,14 @@ ${securitiesXml}
  * @param transactionsArray Array of fund transactions to be reported.
  * @param year Reporting year.
  * @param taxNumber Taxpayer's tax number.
+ * @param submissionType Determines whether the submission is regular or a self-report (samoprijava).
  * @returns The full XML document as a string.
  */
 export function generateFullDohKDVPXML(
   transactionsArray: FundTransactions[],
   year: number,
-  taxNumber: string
+  taxNumber: string,
+  submissionType: SubmissionType
 ): string {
   // Filter out funds with no orders
   const fundsWithOrders = transactionsArray.filter(fund => fund.orders.length > 0);
@@ -130,8 +139,10 @@ export function generateFullDohKDVPXML(
     .join('\n');
 
   // Build the KDVP header using the provided reporting year.
+  const workflowId = resolveWorkflowId(submissionType);
+
   const kdvpHeaderXml = `      <KDVP>
-        <DocumentWorkflowID>O</DocumentWorkflowID>
+        <DocumentWorkflowID>${workflowId}</DocumentWorkflowID>
         <Year>${year}</Year>
         <PeriodStart>${year}-01-01</PeriodStart>
         <PeriodEnd>${year}-12-31</PeriodEnd>
@@ -177,12 +188,14 @@ ${dohKdvpXml}
  * @param funds - Array of FundTransactions.
  * @param taxYear - Tax year (e.g. 2024).
  * @param taxNumber - Tax number of the taxpayer.
+ * @param submissionType - Regular submission or self-report (samoprijava).
  * @returns A string containing the XML document.
  */
 export function generateTaxOfficeXml(
   funds: FundTransactions[],
   taxYear: number,
-  taxNumber: string
+  taxNumber: string,
+  submissionType: SubmissionType
 ): string {
   // Calculate total interest in EUR
   let totalInterestInEur = 0;
@@ -248,11 +261,14 @@ export function generateTaxOfficeXml(
 /**
  * Generates tax XML files for all funds in the transactions array
  * @param transactions Array of fund transactions
+ * @param taxYear Reporting year
+ * @param submissionType Regular submission or self-report (samoprijava)
  * @returns Object mapping fund currencies to their XML content
  */
 export function generateAllTaxXMLs(
   transactions: FundTransactions[],
-  taxYear: number
+  taxYear: number,
+  submissionType: SubmissionType
 ): Record<string, string> {
   const xmlFiles: Record<string, string> = {};
   
@@ -265,13 +281,13 @@ export function generateAllTaxXMLs(
   
   if (fundsWithOrders.length > 0) {
     // Generate a single XML file containing all funds with orders
-    const kdvpXml = generateFullDohKDVPXML(fundsWithOrders, taxYear, taxNumber);
+    const kdvpXml = generateFullDohKDVPXML(fundsWithOrders, taxYear, taxNumber, submissionType);
     xmlFiles["kdvp"] = kdvpXml;
   }
   
   if (fundsWithInterest.length > 0) {
     // Generate a tax office XML for interest income
-    const taxOfficeXml = generateTaxOfficeXml(fundsWithInterest, taxYear, taxNumber);
+    const taxOfficeXml = generateTaxOfficeXml(fundsWithInterest, taxYear, taxNumber, submissionType);
     xmlFiles["interest"] = taxOfficeXml;
   }
   
